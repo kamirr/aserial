@@ -6,28 +6,29 @@ use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 
 #[allow(dead_code)]
-fn play(receiver: mpsc::Receiver<Vec<bool>>, freqs: Vec<u32>) {
+fn play(receiver: mpsc::Receiver<Option<u8>>, conf: Config) {
     use rodio::Sink;
     use frame::*;
 
-    let mut fb = FrameBuilder::new(freqs);
+    let mut fb = FrameBuilder::new(conf.band);
 
     let device = rodio::default_output_device().unwrap();
     let sink = Sink::new(&device);
-    let time_per_sample = 0.07;
-    let silence_ratio = 1.0;
 
-    for v in receiver.iter() {
-        //println!("{:?}", &v);
-        fb.make_frame(&v).play(&sink, time_per_sample);
-        fb.make_frame(&[false, false, false, false, false]).play(&sink, time_per_sample * silence_ratio);
+    for maybe in receiver.iter() {
+        let b = match maybe {
+            Some(byte) => byte,
+            None => break,
+        };
+        fb.build(false, b, &sink, conf.clk_low_time);
+        fb.build(true, b, &sink, conf.clk_high_time);
     }
 
     sink.sleep_until_end();
 }
 
 #[allow(dead_code)]
-fn stdin_reader(sender: mpsc::Sender<Vec<bool>>) {
+fn stdin_reader(sender: mpsc::Sender<Option<u8>>) {
     use std::io::Read;
 
     let stdin = std::io::stdin();
@@ -41,27 +42,21 @@ fn stdin_reader(sender: mpsc::Sender<Vec<bool>>) {
             _ => { },
         }
 
-        let b = buf[0];
-        let (a1, b1) = ((b >> 0) & 1 == 1, (b >> 1) & 1 == 1);
-        let (a2, b2) = ((b >> 2) & 1 == 1, (b >> 3) & 1 == 1);
-        let (a3, b3) = ((b >> 4) & 1 == 1, (b >> 5) & 1 == 1);
-        let (a4, b4) = ((b >> 6) & 1 == 1, (b >> 7) & 1 == 1);
-
-        sender.send(vec![true, a1, b1, a2, b2]).unwrap();
-        sender.send(vec![true, a3, b3, a4, b4]).unwrap();
+        sender.send(Some(buf[0])).unwrap();
     }
+
+    sender.send(None).unwrap();
 }
 
 fn window_fn(f: f32, n: usize, n_total: usize) -> f32 {
     f * (3.1415 * n as f32 / n_total as f32).sin().powi(2)
 }
 
-fn plot(t: f32, buf: &mut [u8], output: &Vec<Complex<f32>>) {
+fn plot(caption: String, buf: &mut [u8], output: &Vec<Complex<f32>>) {
     use plotters::drawing::bitmap_pixel::BGRXPixel;
     use plotters::prelude::*;
 
     let size: (u32, u32) = (800, 600);
-    let caption = format!("t={:.1}s", t);
 
     let root = BitMapBackend::<BGRXPixel>::with_buffer_and_format(&mut buf[..], size)
         .unwrap()
@@ -76,14 +71,14 @@ fn plot(t: f32, buf: &mut [u8], output: &Vec<Complex<f32>>) {
         .margin(5)
         .x_label_area_size(30)
         .y_label_area_size(30)
-        .build_ranged(30f32..300f32, 0f32..20f32)
+        .build_ranged(30f32..1600f32, 0f32..50f32)
         .unwrap();
 
     chart.configure_mesh().draw().unwrap();
 
     chart
         .draw_series(LineSeries::new(
-            (30..300).map(|n| {
+            (30..1600).map(|n| {
                 (n as f32, output[n].norm() as f32)
             }),
             &RED,
@@ -106,14 +101,15 @@ fn normalize(output: &mut [Complex<f32>], window_size: usize) {
     }
 }
 
-fn read(receiver: mpsc::Receiver<Vec<f32>>, freqs: Vec<u32>) {
+fn read(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     use std::io::Write;
 
     let mut i = 0;
+    let mut transferred = 0;
 
+    let band = conf.band;
     let window_size = 8820usize;
-    let cutoff_clk = 3f32;
-    let cutoff_bits = 3f32;
+    let cutoff_clk = conf.cutoff_clk;
     let start = std::time::Instant::now();
 
     let mut buf = vec![0u8; 800 * 600 * 4];
@@ -127,10 +123,6 @@ fn read(receiver: mpsc::Receiver<Vec<f32>>, freqs: Vec<u32>) {
     let mut planner = rustfft::FFTplanner::new(false);
     let mut output: Vec<Complex<f32>> = vec![Complex::zero(); window_size];
     let mut flag = true;
-    let mut bits: Vec<i32> = vec![];
-
-    let (mut av1, mut av2, mut av3, mut av4) = (0.0, 0.0, 0.0, 0.0);
-    let mut averaging_over = 0;
 
     for window in receiver.iter() {
         i += 1;
@@ -147,58 +139,47 @@ fn read(receiver: mpsc::Receiver<Vec<f32>>, freqs: Vec<u32>) {
 
         normalize(&mut output, window_size);
 
-        if flag && output[freqs[0] as usize / 10].norm() > cutoff_clk {
-            //println!("got {} {}", bits[bits.len() - 1], bits[bits.len() - 2]);
+        if flag && output[band.clk as usize / 10].norm() > cutoff_clk {
+            let from = band.base as usize / 10;
+            let to = (band.base + band.scale * 255) as usize / 10;
 
+            let freq_offset = output[from .. to]
+                .iter()
+                .enumerate()
+                .max_by_key(|(_, f)| (f.norm_sqr() * 10000.0) as u32)
+                .unwrap().0 * 10;
+            let freq_offset = freq_offset as u32;
+
+            /* round to nearest multiple of 20 */
+            let byte = match freq_offset % band.scale >= band.scale / 2 {
+                true => freq_offset / band.scale + 1,
+                false => freq_offset / band.scale,
+            } as u8;
+
+            let stdout = std::io::stdout();
+            let mut out_handle = stdout.lock();
+            out_handle.write(&[byte]).unwrap();
+            out_handle.flush().unwrap();
+
+            transferred += 1;
             flag = false;
-            averaging_over = 0;
-            av1 = 0.0;
-            av2 = 0.0;
-            av3 = 0.0;
-            av4 = 0.0;
-        } else if !flag && output[freqs[0] as usize / 10].norm() < cutoff_clk {
-            bits.push(if av1 / averaging_over as f32 > cutoff_bits { 1 } else { 0 });
-            bits.push(if av2 / averaging_over as f32 > cutoff_bits { 1 } else { 0 });
-            bits.push(if av3 / averaging_over as f32 > cutoff_bits { 1 } else { 0 });
-            bits.push(if av4 / averaging_over as f32 > cutoff_bits { 1 } else { 0 });
-
-            if bits.len() >= 8 {
-                let rem = bits.split_off(8);
-                let eight = bits;
-                bits = rem;
-
-                let byte = {
-                    let mut tmp = 0u8;
-                    for b in &eight {
-                        tmp <<= 1;
-                        tmp |= *b as u8;
-                    }
-
-                    tmp.reverse_bits()
-                };
-
-                let stdout = std::io::stdout();
-                let mut out_handle = stdout.lock();
-                out_handle.write(&[byte]).unwrap();
-                out_handle.flush().unwrap();
-            }
-
+        } else if !flag && output[band.clk as usize / 10].norm() < cutoff_clk {
             flag = true;
         }
 
-        if !flag {
-            averaging_over += 1;
-            av1 += output[freqs[1] as usize / 10].norm();
-            av2 += output[freqs[2] as usize / 10].norm();
-            av3 += output[freqs[3] as usize / 10].norm();
-            av4 += output[freqs[4] as usize / 10].norm();
+        let total = 1071;
+        if transferred == total {
+            eprintln!("rate = {}", total as f32 / start.elapsed().as_secs_f32());
+            std::process::exit(0);
         }
 
-        plot(start.elapsed().as_secs_f32(), &mut buf, &output);
-
-        mfb_window
-            .update_with_buffer(unsafe { std::mem::transmute(&buf[..]) })
-            .unwrap();
+        if i % 8 == 0 {
+            let caption = format!("#{}; t={:.1}s", transferred, start.elapsed().as_secs_f32());
+            plot(caption, &mut buf, &output);
+            mfb_window
+                .update_with_buffer(unsafe { std::mem::transmute(&buf[..]) })
+                .unwrap();
+        }
     }
 
     println!("\n=================\nprocessed {} windows", i);
@@ -218,7 +199,7 @@ fn audio_input(sender: mpsc::Sender<Vec<f32>>) {
     let safe_sender = Arc::new(Mutex::new(sender));
     let safe_window = Arc::new(Mutex::new(Vec::<f32>::new()));
 
-    let step = 300usize;
+    let step = 100usize;
     let window_size = 8820usize;
 
     event_loop.run(|_, stream_result| {
@@ -244,19 +225,43 @@ fn audio_input(sender: mpsc::Sender<Vec<f32>>) {
     });
 }
 
+#[derive(Clone, Copy)]
+struct Config {
+    band: frame::Band,
+    cutoff_clk: f32,
+    clk_high_time: f32,
+    clk_low_time: f32,
+}
+
+fn cable_conf() -> Config {
+    Config {
+        band: frame::Band { clk: 15000, base: 4000, scale: 40 },
+        cutoff_clk: 40.0,
+        clk_low_time: 0.025,
+        clk_high_time: 0.025,
+    }
+}
+
+fn loud_conf() -> Config {
+    Config {
+        band: frame::Band { clk: 2000, base: 4000, scale: 30 },
+        cutoff_clk: 1.0,
+        clk_low_time: 0.08,
+        clk_high_time: 0.08,
+    }
+}
+
 fn main() {
     use std::thread;
 
-    let freqs = &[1200, 1500, 1700, 1900, 2100];
+    let conf = loud_conf();
 
     let (sender, receiver) = mpsc::channel();
-    let freqs1 = freqs.to_vec();
-    let player = thread::spawn(move || play(receiver, freqs1));
+    let player = thread::spawn(move || play(receiver, conf));
     thread::spawn(move || stdin_reader(sender));
 
     let (sender, receiver) = mpsc::channel();
-    let freqs2 = freqs.to_vec();
-    let reader = thread::spawn(move || read(receiver, freqs2));
+    let reader = thread::spawn(move || read(receiver, conf));
     thread::spawn(move || audio_input(sender));
 
     player.join().unwrap();
