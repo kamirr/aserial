@@ -1,66 +1,66 @@
 pub use std::collections::HashMap;
 
-pub type Frequency = i64;
-pub type Amplitude = f64;
-pub type Bits = HashMap<Frequency, bool>;
-pub type BitMapping = HashMap<usize, Frequency>;
+pub type Frequency = u32;
+pub type Bits = Vec<(Frequency, bool)>;
+pub type BitMapping = Vec<Frequency>;
 
-#[derive(Clone, Copy, Debug)]
-pub struct Reference {
-    pub amplitude: Amplitude,
-    pub frequency: Frequency,
-}
+use rodio::{
+    Sink, Device,
+    source::{SineWave, Source, Zero}
+};
+
+use crate::multi_sine_wave::MultiSineWave;
 
 #[derive(Debug)]
 pub struct Frame {
-    clk: Frequency,
-    reference: Reference,
     bits: Bits,
+}
+
+impl Frame {
+    pub fn play(&self, device: &Device) -> Sink {
+        let sink = Sink::new(device);
+        /*let mut source: Box<dyn Source<Item = f32> + Send + Sync> = Box::new(
+            Zero::new(1, 48000)
+        );
+
+        for (freq, state) in &self.bits {
+            if *state {
+                println!("{}", freq);
+                source = Box::new(source.mix(SineWave::new(*freq)));
+            }
+        }*/
+
+        let source = MultiSineWave::new(
+            self.bits.iter().filter(|(_, state)| *state).map(|(freq, _)| *freq as f32).collect(),
+            48000,
+        );
+
+        //println!("");
+
+        sink.append(source);
+
+        sink
+    }
 }
 
 #[derive(Debug)]
 pub struct FrameBuilder {
-    clk1: Frequency,
-    clk2: Frequency,
-    reference: Reference,
     map: BitMapping,
-    frame_num: usize,
 }
 
 impl FrameBuilder {
-    pub fn new(clk1: Frequency, clk2: Frequency, reference: Reference, map: BitMapping) -> Self {
-        FrameBuilder {
-            clk1,
-            clk2,
-            reference,
-            map,
-            frame_num: 0
-        }
+    pub fn new(map: BitMapping) -> Self {
+        FrameBuilder { map, }
     }
 
     pub fn make_frame(&mut self, bits: &[bool]) -> Frame {
+        println!("{:?}:", bits);
         assert_eq!(bits.len(), self.map.len(), "!!! :)");
 
-        let clk = match self.frame_num % 2 {
-            0 => self.clk1,
-            1 => self.clk2,
-            _ => panic!("!!! :)"),
-        };
-        let reference = self.reference;
-        let bits = {
-            let mut tmp: Bits = HashMap::new();
-            for i in 0 .. bits.len() {
-                tmp.insert(self.map[&i], bits[i]);
-            }
-            tmp
-        };
-
-        self.frame_num += 1;
-
         Frame {
-            clk,
-            reference,
-            bits,
+            bits: (0..bits.len())
+                .map(|i| (self.map[i], bits[i]))
+                .collect(),
         }
     }
 }
