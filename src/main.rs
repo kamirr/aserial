@@ -1,4 +1,4 @@
-mod multi_sine_wave;
+mod bi_sine_wave;
 mod frame;
 
 use std::sync::mpsc;
@@ -71,7 +71,7 @@ fn plot(caption: String, buf: &mut [u8], output: &Vec<Complex<f32>>) {
         .margin(5)
         .x_label_area_size(30)
         .y_label_area_size(30)
-        .build_ranged(30f32..1600f32, 0f32..50f32)
+        .build_ranged(30f32..1600f32, 0f32..2f32)
         .unwrap();
 
     chart.configure_mesh().draw().unwrap();
@@ -122,6 +122,7 @@ fn read(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
 
     let mut planner = rustfft::FFTplanner::new(false);
     let mut output: Vec<Complex<f32>> = vec![Complex::zero(); window_size];
+    let mut last_frame = std::time::Instant::now();
     let mut flag = true;
 
     for window in receiver.iter() {
@@ -167,18 +168,20 @@ fn read(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             flag = true;
         }
 
-        let total = 1071;
+        let total = 1093;
         if transferred == total {
             eprintln!("rate = {}", total as f32 / start.elapsed().as_secs_f32());
             std::process::exit(0);
         }
 
-        if i % 8 == 0 {
+        if last_frame.elapsed() > std::time::Duration::new(0, 1000000000 / 60) {
             let caption = format!("#{}; t={:.1}s", transferred, start.elapsed().as_secs_f32());
             plot(caption, &mut buf, &output);
             mfb_window
                 .update_with_buffer(unsafe { std::mem::transmute(&buf[..]) })
                 .unwrap();
+
+            last_frame = std::time::Instant::now();
         }
     }
 
@@ -199,7 +202,7 @@ fn audio_input(sender: mpsc::Sender<Vec<f32>>) {
     let safe_sender = Arc::new(Mutex::new(sender));
     let safe_window = Arc::new(Mutex::new(Vec::<f32>::new()));
 
-    let step = 100usize;
+    let step = 200usize;
     let window_size = 8820usize;
 
     event_loop.run(|_, stream_result| {
@@ -233,37 +236,55 @@ struct Config {
     clk_low_time: f32,
 }
 
+#[allow(dead_code)]
 fn cable_conf() -> Config {
     Config {
         band: frame::Band { clk: 15000, base: 4000, scale: 40 },
-        cutoff_clk: 40.0,
+        cutoff_clk: 1.9,
         clk_low_time: 0.025,
         clk_high_time: 0.025,
     }
 }
 
+#[allow(dead_code)]
 fn loud_conf() -> Config {
     Config {
-        band: frame::Band { clk: 2000, base: 4000, scale: 30 },
-        cutoff_clk: 1.0,
-        clk_low_time: 0.08,
-        clk_high_time: 0.08,
+        band: frame::Band { clk: 1000, base: 4000, scale: 30 },
+        cutoff_clk: 10.0,
+        clk_low_time: 0.05,
+        clk_high_time: 0.05,
     }
 }
 
 fn main() {
     use std::thread;
 
-    let conf = loud_conf();
+    let usage = || {
+        eprintln!("usage: aserial listen|talk");
+        std::process::exit(1);
+    };
 
-    let (sender, receiver) = mpsc::channel();
-    let player = thread::spawn(move || play(receiver, conf));
-    thread::spawn(move || stdin_reader(sender));
+    let args: Vec<String> = std::env::args().collect();
+    let conf = cable_conf();
 
-    let (sender, receiver) = mpsc::channel();
-    let reader = thread::spawn(move || read(receiver, conf));
-    thread::spawn(move || audio_input(sender));
+    if args.len() == 1 {
+        usage();
+    }
 
-    player.join().unwrap();
-    reader.join().unwrap();
+    match args[1].as_ref() {
+        "listen" => {
+            let (sender, receiver) = mpsc::channel();
+            thread::spawn(move || audio_input(sender));
+            thread::spawn(move || read(receiver, conf))
+        },
+        "talk" => {
+            let (sender, receiver) = mpsc::channel();
+            thread::spawn(move || stdin_reader(sender));
+            thread::spawn(move || {
+                play(receiver, conf);
+                std::thread::sleep(std::time::Duration::new(1, 0));
+            })
+        },
+        _ => usage(),
+    }.join().unwrap();
 }

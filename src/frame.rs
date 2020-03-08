@@ -3,7 +3,7 @@ pub use std::collections::HashMap;
 pub type Frequency = u32;
 
 use rodio::Sink;
-use crate::multi_sine_wave::MultiSineWave;
+use crate::bi_sine_wave::BiSineWave;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Band {
@@ -23,15 +23,16 @@ impl FrameBuilder {
     }
 
     pub fn build(&mut self, clk: bool, byte: u8, sink: &Sink, secs: f32) {
-        let mut freqs = vec![(self.band.base + self.band.scale * byte as u32) as f32];
-        if clk {
-            freqs.push(self.band.clk as f32);
-        }
+        let byte_freq = (self.band.base + self.band.scale * byte as u32) as f32;
+        let freqs = (
+            byte_freq,
+            if clk { Some(self.band.clk as f32) } else { None }
+        );
 
-        let source = MultiSineWave::new(
+        let source = BiSineWave::new(
             freqs,
             48000,
-            Some((secs * 48000f32) as usize),
+            (secs * 48000f32) as usize,
         );
 
         sink.append(source);
