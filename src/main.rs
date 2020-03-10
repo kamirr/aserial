@@ -250,9 +250,9 @@ fn cable_conf() -> Config {
 fn loud_conf() -> Config {
     Config {
         band: frame::Band { clk: 1000, base: 4000, scale: 30 },
-        cutoff_clk: 10.0,
-        clk_low_time: 0.05,
-        clk_high_time: 0.05,
+        cutoff_clk: 0.2,
+        clk_low_time: 0.045,
+        clk_high_time: 0.045,
     }
 }
 
@@ -265,7 +265,7 @@ fn main() {
     };
 
     let args: Vec<String> = std::env::args().collect();
-    let conf = cable_conf();
+    let conf = loud_conf();
 
     if args.len() == 1 {
         usage();
