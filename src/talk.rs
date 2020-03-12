@@ -6,17 +6,13 @@ use crate::frame::*;
 use crate::Config;
 
 /* play sounds corresponding to incoming bytes */
-fn play(receiver: mpsc::Receiver<Option<Vec<u8>>>, conf: Config) {
+fn play(receiver: mpsc::Receiver<Vec<u8>>, conf: Config) {
     let mut fb = FrameBuilder::new(conf.band);
 
     let device = rodio::default_output_device().unwrap();
     let sink = Sink::new(&device);
 
-    for maybe in receiver.iter() {
-        let bytes = match maybe {
-            Some(v) => v,
-            None => break,
-        };
+    for bytes in receiver.iter() {
         for b in bytes {
             fb.build(false, b, &sink, conf.clk_low_time);
             fb.build(true, b, &sink, conf.clk_high_time);
@@ -27,7 +23,7 @@ fn play(receiver: mpsc::Receiver<Option<Vec<u8>>>, conf: Config) {
 }
 
 /* read bytes from stding and send them to be played */
-fn stdin_reader(sender: mpsc::Sender<Option<Vec<u8>>>) {
+fn stdin_reader(sender: mpsc::Sender<Vec<u8>>) {
     use std::io::Read;
 
     let stdin = std::io::stdin();
@@ -41,10 +37,8 @@ fn stdin_reader(sender: mpsc::Sender<Option<Vec<u8>>>) {
         };
 
         let bytes = buf[0..cnt].into();
-        sender.send(Some(bytes)).unwrap();
+        sender.send(bytes).unwrap();
     }
-
-    sender.send(None).unwrap();
 }
 
 /* set up a pair of threads to read bytes and play them */
