@@ -33,13 +33,14 @@ fn stdin_reader(sender: mpsc::Sender<Option<u8>>) {
     let mut buf = [0];
 
     loop {
-        match handle.read(&mut buf) {
+        let cnt = match handle.read(&mut buf) {
             Err(_) => break,
-            Ok(0) => break,
-            _ => { },
-        }
+            Ok(n) => n,
+        };
 
-        sender.send(Some(buf[0])).unwrap();
+        for k in 0 .. cnt {
+            sender.send(Some(buf[k])).unwrap();
+        }
     }
 
     sender.send(None).unwrap();
