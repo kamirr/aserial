@@ -4,6 +4,7 @@ use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use crate::Config;
 
+/* Hann window to get rid of unwanted hight frequencies */
 fn window_fn(f: f32, n: usize, n_total: usize) -> f32 {
     f * (3.1415 * n as f32 / n_total as f32).sin().powi(2)
 }
@@ -49,12 +50,21 @@ fn plot(caption: String, buf: &mut [u8], output: &Vec<Complex<f32>>) {
         .draw().unwrap();
 }
 
+/* converts a+bi to r+0i where r=sqrt(a*a + b*b) */
 fn normalize(output: &mut [Complex<f32>], window_size: usize) {
     for n in 0 .. output.len() {
         let value = output[n].norm_sqr();
         let normalized = value / window_size as f32;
         output[n] = Complex::new(normalized, 0.0);
     }
+}
+
+fn get_windowed_samples(window: &Vec<f32>) -> Vec<Complex<f32>> {
+    window
+        .iter()
+        .enumerate()
+        .map(|(i, f)| Complex::<f32>::new(window_fn(*f, i, window.len()), 0.0))
+        .collect()
 }
 
 fn read(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
@@ -84,11 +94,7 @@ fn read(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     for window in receiver.iter() {
         i += 1;
 
-        let mut input: Vec<Complex<f32>> = window
-            .iter()
-            .enumerate()
-            .map(|(i, f)| Complex::<f32>::new(window_fn(*f, i, window_size), 0.0))
-            .collect();
+        let mut input = get_windowed_samples(&window);
 
         planner
             .plan_fft(window_size)
@@ -124,12 +130,8 @@ fn read(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             flag = true;
         }
 
-        let total = 1093;
-        if transferred == total {
-            eprintln!("rate = {}", total as f32 / start.elapsed().as_secs_f32());
-            std::process::exit(0);
-        }
-
+        /* make a new plot and refresh the window if more than 1/60s of a second has passed *
+         * since the last refresh                                                           */
         if last_frame.elapsed() > std::time::Duration::new(0, 1000000000 / 60) {
             let caption = format!("#{}; t={:.1}s", transferred, start.elapsed().as_secs_f32());
             plot(caption, &mut buf, &output);
@@ -144,6 +146,7 @@ fn read(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     println!("\n=================\nprocessed {} windows", i);
 }
 
+/* read samples from default input device */
 fn audio_input(sender: mpsc::Sender<Vec<f32>>) {
     use cpal::traits::{DeviceTrait, EventLoopTrait, HostTrait};
     use std::sync::{Mutex, Arc};
@@ -164,16 +167,18 @@ fn audio_input(sender: mpsc::Sender<Vec<f32>>) {
     event_loop.run(|_, stream_result| {
         if let cpal::StreamData::Input{ buffer } = stream_result.unwrap() {
             match buffer {
+                /* ATM only support buffers of f32 samples */
                 cpal::UnknownTypeInputBuffer::F32(buffer) => {
                     for sample in &*buffer {
                         let mut window = safe_window.lock().unwrap();
-                        let sender = safe_sender.lock().unwrap();
 
                         window.push(*sample);
 
                         if window.len() == window_size {
                             let mut other_window: Vec<f32> = window[step .. window.len()].into();
                             std::mem::swap(&mut other_window, &mut *window);
+
+                            let sender = safe_sender.lock().unwrap();
                             sender.send(other_window).unwrap();
                         }
                     }
@@ -185,7 +190,7 @@ fn audio_input(sender: mpsc::Sender<Vec<f32>>) {
 }
 
 pub fn listen(conf: Config) -> std::thread::JoinHandle<()> {
-	let (sender, receiver) = mpsc::channel();
-	thread::spawn(move || audio_input(sender));
-	thread::spawn(move || read(receiver, conf))
+    let (sender, receiver) = mpsc::channel();
+    thread::spawn(move || audio_input(sender));
+    thread::spawn(move || read(receiver, conf))
 }

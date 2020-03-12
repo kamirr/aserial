@@ -17,7 +17,6 @@ pub struct Config {
     pub clk_low_time: f32,
 }
 
-#[allow(dead_code)]
 fn cable_conf() -> Config {
     Config {
         band: Band { clk: 15000, base: 4000, scale: 40 },
@@ -27,7 +26,6 @@ fn cable_conf() -> Config {
     }
 }
 
-#[allow(dead_code)]
 fn loud_conf() -> Config {
     Config {
         band: Band { clk: 1000, base: 4000, scale: 30 },
@@ -38,17 +36,21 @@ fn loud_conf() -> Config {
 }
 
 fn usage() -> ! {
-	eprintln!("usage: aserial listen|talk");
-	exit(1)
+    eprintln!("usage: aserial listen|talk loud|cable");
+    exit(1)
 }
 
 fn main() {
     let args: Vec<String> = args().collect();
-    let conf = loud_conf();
-
-    if args.len() != 2 {
+    if args.len() != 3 {
         usage();
     }
+
+    let conf = match args[2].as_ref() {
+        "loud" => loud_conf(),
+        "cable" => cable_conf(),
+        _ => usage(),
+    };
 
     match args[1].as_ref() {
         "listen" => listen(conf),
