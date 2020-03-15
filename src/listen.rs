@@ -1,56 +1,18 @@
+use std::io::Write;
 use std::sync::mpsc;
 use std::thread;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
+use cpal::traits::{DeviceTrait, EventLoopTrait, HostTrait};
 use crate::Config;
+use crate::plot::plot;
 
 /* Hann window to get rid of unwanted hight frequencies */
 fn window_fn(f: f32, n: usize, n_total: usize) -> f32 {
     f * (3.1415 * n as f32 / n_total as f32).sin().powi(2)
 }
 
-fn plot(caption: String, buf: &mut [u8], output: &Vec<Complex<f32>>) {
-    use plotters::drawing::bitmap_pixel::BGRXPixel;
-    use plotters::prelude::*;
-
-    let size: (u32, u32) = (800, 600);
-
-    let root = BitMapBackend::<BGRXPixel>::with_buffer_and_format(&mut buf[..], size)
-        .unwrap()
-        .into_drawing_area();
-
-    root
-        .fill(&WHITE)
-        .unwrap();
-
-    let mut chart = ChartBuilder::on(&root)
-        .caption(&caption, ("sans-serif", 50).into_font())
-        .margin(5)
-        .x_label_area_size(30)
-        .y_label_area_size(30)
-        .build_ranged(30f32..1600f32, 0f32..2f32)
-        .unwrap();
-
-    chart.configure_mesh().draw().unwrap();
-
-    chart
-        .draw_series(LineSeries::new(
-            (30..1600).map(|n| {
-                (n as f32, output[n].norm() as f32)
-            }),
-            &RED,
-        ))
-        .unwrap()
-        .legend(|(x, y)| PathElement::new(vec![(x, y), (x + 20, y)], &RED));
-
-    chart
-        .configure_series_labels()
-        .background_style(&WHITE.mix(0.8))
-        .border_style(&BLACK)
-        .draw().unwrap();
-}
-
-/* converts a+bi to r+0i where r=sqrt(a*a + b*b) */
+/* converts each a+bi to r+0i where r=(a*a + b*b)/window_size */
 fn normalize(output: &mut [Complex<f32>], window_size: usize) {
     for n in 0 .. output.len() {
         let value = output[n].norm_sqr();
@@ -59,6 +21,7 @@ fn normalize(output: &mut [Complex<f32>], window_size: usize) {
     }
 }
 
+/* passes samples through a window window_fn */
 fn get_windowed_samples(window: &Vec<f32>) -> Vec<Complex<f32>> {
     window
         .iter()
@@ -67,18 +30,29 @@ fn get_windowed_samples(window: &Vec<f32>) -> Vec<Complex<f32>> {
         .collect()
 }
 
-fn read(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
-    use std::io::Write;
-
+/* take windows and decode them into bytes */
+fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
+    /* bookkeeping */
     let mut i = 0;
     let mut transferred = 0;
+    let mut flag = true;
+    let mut last_frame = std::time::Instant::now();
+    let start = std::time::Instant::now();
 
+    /* all configuration */
     let band = conf.band;
     let window_size = 8820usize;
     let cutoff_clk = conf.cutoff_clk;
-    let start = std::time::Instant::now();
 
+    /* lock stdout, only this part of code uses it  *
+     * and I need total control, including flushing */
+    let stdout = std::io::stdout();
+    let mut out_handle = stdout.lock();
+
+    /* rendering buffer */
     let mut buf = vec![0u8; 800 * 600 * 4];
+
+    /* window to display the plot */
     let mut mfb_window = minifb::Window::new(
         "FT",
         800,
@@ -86,59 +60,72 @@ fn read(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
         minifb::WindowOptions::default(),
     ).unwrap();
 
-    let mut planner = rustfft::FFTplanner::new(false);
+    /* used to compute FFT efficiently */
+    let mut planner = rustfft::FFTplanner::new(false /* false=FFT, true=FFT^-1 */);
     let mut output: Vec<Complex<f32>> = vec![Complex::zero(); window_size];
-    let mut last_frame = std::time::Instant::now();
-    let mut flag = true;
 
+    /* take each window from the microphone */
     for window in receiver.iter() {
         i += 1;
 
         let mut input = get_windowed_samples(&window);
 
+        /* compute FFT */
         planner
             .plan_fft(window_size)
             .process(&mut input, &mut output);
 
+        /* 'normalize' FFT output */
         normalize(&mut output, window_size);
 
+        /* passing cutoff_clk from below */
         if flag && output[band.clk as usize / 10].norm() > cutoff_clk {
+            /* range of output indices corresponding to data-encoding frequencies */
             let from = band.base as usize / 10;
             let to = (band.base + band.scale * 255) as usize / 10;
 
+            /* find the loudest frequency in that range */
             let freq_offset = output[from .. to]
                 .iter()
                 .enumerate()
+                /* the line below maps floats to integers while preserving the order *
+                 * because float aren't ordered (cuz NaNs) and we need a maximum     */
                 .max_by_key(|(_, f)| (f.norm_sqr() * 10000.0) as u32)
-                .unwrap().0 * 10;
+                .unwrap().0 * 10; /* mutliply by 10 because the unit is 0.1Hz and I want 1Hz */
+            /* map it to integers */
             let freq_offset = freq_offset as u32;
 
-            /* round to nearest multiple of 20 */
+            /* round to nearest multiple of band.scale */
             let byte = match freq_offset % band.scale >= band.scale / 2 {
                 true => freq_offset / band.scale + 1,
                 false => freq_offset / band.scale,
             } as u8;
 
-            let stdout = std::io::stdout();
-            let mut out_handle = stdout.lock();
+            /* write out the received byte and flush */
             out_handle.write(&[byte]).unwrap();
             out_handle.flush().unwrap();
 
             transferred += 1;
             flag = false;
+
+        /* passing cutoff_clk from above */
         } else if !flag && output[band.clk as usize / 10].norm() < cutoff_clk {
             flag = true;
         }
 
-        /* make a new plot and refresh the window if more than 1/60s of a second has passed *
-         * since the last refresh                                                           */
+        /* make a new plot and refresh the window if more than 1/60th *
+         * of a second has passed since the last refres               */
         if last_frame.elapsed() > std::time::Duration::new(0, 1000000000 / 60) {
+            /* "#[SAMPLE_COUNT]; t=[TIME_IN_SECS]s" */
             let caption = format!("#{}; t={:.1}s", transferred, start.elapsed().as_secs_f32());
+            /* render the plot to the preallocated buffer */
             plot(caption, &mut buf, &output);
+            /* refresh the window using that buffer */
             mfb_window
                 .update_with_buffer(unsafe { std::mem::transmute(&buf[..]) })
                 .unwrap();
 
+            /* mark the time of last refresh */
             last_frame = std::time::Instant::now();
         }
     }
@@ -146,51 +133,65 @@ fn read(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     println!("\n=================\nprocessed {} windows", i);
 }
 
+fn process_sample(sample: f32, window: &mut Vec<f32>, window_size: usize, step: usize, sender: &mpsc::Sender<Vec<f32>>) {
+    window.push(sample);
+
+    /* if the window is of necessary size... */
+    if window.len() == window_size {
+        /* copy all data that should be retained for the next window */
+        let mut other_window: Vec<f32> = window[step .. window.len()].into();
+        /* swap it with the current window */
+        std::mem::swap(&mut other_window, window);
+
+        /* send the window to the other thread */
+        sender.send(other_window).unwrap();
+    }
+}
+
 /* read samples from default input device */
 fn audio_input(sender: mpsc::Sender<Vec<f32>>) {
-    use cpal::traits::{DeviceTrait, EventLoopTrait, HostTrait};
-    use std::sync::{Mutex, Arc};
-
+    /* start the event loop with the stream of samples from the microphone */
     let host = cpal::default_host();
     let event_loop = host.event_loop();
-    let device = host.default_input_device().expect("no output device available");
+    let device = host.default_input_device().expect("no input device available");
     let format = device.default_input_format().unwrap();
     let stream_id = event_loop.build_input_stream(&device, &format).unwrap();
     event_loop.play_stream(stream_id).expect("failed to play_stream");
 
-    let safe_sender = Arc::new(Mutex::new(sender));
-    let safe_window = Arc::new(Mutex::new(Vec::<f32>::new()));
+    /* collects samples from microphone */
+    let mut window = Vec::<f32>::new();
 
+    /* window step size */
     let step = 200usize;
     let window_size = 8820usize;
 
-    event_loop.run(|_, stream_result| {
+    /* run a function for each new event */
+    event_loop.run(move |_, stream_result| {
+        /* if the event is an input buffer... */
         if let cpal::StreamData::Input{ buffer } = stream_result.unwrap() {
+            /* check the buffer type... */
             match buffer {
                 /* ATM only support buffers of f32 samples */
                 cpal::UnknownTypeInputBuffer::F32(buffer) => {
+                    /* process each sample in the buffer */
                     for sample in &*buffer {
-                        let mut window = safe_window.lock().unwrap();
-
-                        window.push(*sample);
-
-                        if window.len() == window_size {
-                            let mut other_window: Vec<f32> = window[step .. window.len()].into();
-                            std::mem::swap(&mut other_window, &mut *window);
-
-                            let sender = safe_sender.lock().unwrap();
-                            sender.send(other_window).unwrap();
-                        }
+                        process_sample(*sample, &mut window, window_size, step, &sender);
                     }
                 },
+                /* ignore all buffers that don't have F32 samples */
                 _ => { }
             }
         }
     });
 }
 
-pub fn listen(conf: Config) -> std::thread::JoinHandle<()> {
+pub fn listen(conf: Config) {
+    /* create a channel */
     let (sender, receiver) = mpsc::channel();
+
+    /* launch a thread listening on a microphone */
     thread::spawn(move || audio_input(sender));
-    thread::spawn(move || read(receiver, conf))
+
+    /* process incoming audio */
+    audio_processing(receiver, conf)
 }
