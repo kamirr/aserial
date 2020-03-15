@@ -5,8 +5,8 @@ authors = ["Kamil Koczurek <koczurekk@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-cpal = "0.10.0"
-rodio = "0.10.0"
-rustfft = "3.0.1"
-minifb = "0.13.0"
-plotters = { version = "^0.2.12", features = ["bitmap"] }
+cpal = "^0.10"
+rodio = "^0.10"
+rustfft = "^3.0"
+minifb = "^0.13"
+plotters = { version = "^0.2", features = ["bitmap"] }
