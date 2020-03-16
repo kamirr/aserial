@@ -1,3 +1,4 @@
+mod extremum_finder;
 mod bi_sine_wave;
 mod frame;
 mod listen;
@@ -15,11 +16,6 @@ pub struct Config {
     /* frequencies used for communication */
     pub band: Band,
 
-    /* clock intensity at which data is collected, should be adjusted *
-     * algorithmically but I couldn't be bothered to implement it,    *
-     * so it isn't lmao                                               */
-    pub cutoff_clk: f32,
-
     /* time for playing encoded data with and w/o the clock */
     pub clk_high_time: f32,
     pub clk_low_time: f32,
@@ -30,7 +26,6 @@ impl Config {
     pub fn cable() -> Self {
         Config {
             band: Band { clk: 15000, base: 4000, scale: 40 },
-            cutoff_clk: 1.9,
             clk_low_time: 0.025,
             clk_high_time: 0.025,
         }
@@ -40,7 +35,6 @@ impl Config {
     pub fn loud() -> Config {
         Config {
             band: Band { clk: 1000, base: 4000, scale: 30 },
-            cutoff_clk: 2.0,
             clk_low_time: 0.05,
             clk_high_time: 0.05,
         }

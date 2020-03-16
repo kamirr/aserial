@@ -20,20 +20,28 @@ impl FrameBuilder {
 
     /* plays a frame on the sink `sink` for `secs` seconds corresponding to *
      * byte `byte` and with clock low or high depending on `clk`            */
-    pub fn build(&mut self, clk: bool, byte: u8, sink: &Sink, secs: f32) {
-        /* map byte to a frequency in range [base, base+scale*255] */
-        let byte_freq = (self.band.base + self.band.scale * byte as u32) as f32;
+    pub fn build(&mut self, clk: bool, maybe_byte: u32, sink: &Sink, secs: f32) {
+        /* map byte to a frequency in range [base, base+scale*256] */
+        let data_freq = (self.band.base + self.band.scale * maybe_byte as u32) as f32;
+        let clk_freq = self.band.clk as f32;
 
         /* always play byte_freq, only play clock freq if `clk`==true */
         let freqs = (
-            byte_freq,
-            if clk { Some(self.band.clk as f32) } else { None }
+            data_freq,
+            if clk { Some(clk_freq) } else { None }
         );
 
+        let ratio = clk_freq / data_freq;
+
         let source = BiSineWave::new(
-            freqs,                      /* freqs to play */
-            48000,                      /* sample rate */
-            (secs * 48000f32) as usize, /* duration in samples */
+            /* freqs to play */
+            freqs,
+            /* a0/a1 = f0/f1 because it seems to work well duh */
+            ratio,
+            /* sample rate */
+            48000,
+            /* duration in samples */
+            (secs * 48000f32) as usize,
         );
 
         /* play it */

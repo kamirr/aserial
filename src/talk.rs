@@ -16,10 +16,16 @@ fn play(receiver: mpsc::Receiver<Vec<u8>>, conf: Config) {
 
     /* take buffers from output */
     for bytes in receiver.iter() {
+        /* play 4 sync sounds to let listener adjust */
+        for _ in 0 .. 4 {
+            fb.build(false, 0, &sink, conf.clk_low_time);
+            fb.build(true, 0, &sink, conf.clk_high_time);
+        }
+
         /* for each byte play it twice: once w/o the clock, and once with it */
         for b in bytes {
-            fb.build(false, b, &sink, conf.clk_low_time);
-            fb.build(true, b, &sink, conf.clk_high_time);
+            fb.build(false, b as u32 + 1, &sink, conf.clk_low_time);
+            fb.build(true, b as u32 + 1, &sink, conf.clk_high_time);
         }
     }
 

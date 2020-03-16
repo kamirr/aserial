@@ -4,6 +4,7 @@ use std::thread;
 use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use cpal::traits::{DeviceTrait, EventLoopTrait, HostTrait};
+use crate::extremum_finder::*;
 use crate::Config;
 use crate::plot::Plot;
 
@@ -34,14 +35,18 @@ fn get_windowed_samples(window: &Vec<f32>) -> Vec<Complex<f32>> {
 fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     /* bookkeeping */
     let mut i = 0;
+    let mut max_cnt = 0;
+    let mut min_cnt = 0;
     let mut transferred = 0;
-    let mut flag = true;
+    let mut flag = true; /* is clk below cutoff_clk? */
+    let mut maxs = vec![0.0; 3];
+    let mut mins = vec![0.0; 3];
+    let mut ef = ExtremumFinder::new();
     let start = std::time::Instant::now();
 
     /* all configuration */
     let band = conf.band;
     let window_size = 8820usize;
-    let cutoff_clk = conf.cutoff_clk;
 
     /* lock stdout, only this part of code uses it  *
      * and I need total control, including flushing */
@@ -68,11 +73,41 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
         /* 'normalize' FFT output */
         normalize(&mut output, window_size);
 
+        let clk_idx = band.clk as usize / 10;
+        let clk_value = output[clk_idx].norm();
+
+        let baseline = output[0 .. band.base as usize / 10 - 5]
+            .iter()
+            .map(|c| c.norm())
+            .fold(0.0, |a, b| a + b)
+            / (band.base / 10 - 5) as f32;
+
+        let valid = clk_value / baseline > 10.0;
+
+        if let Some(ex) = ef.push(clk_value) {
+            match ex {
+                Extremum::Maximum(v) => {
+                    let idx = max_cnt % maxs.len();
+                    maxs[idx] = v;
+                    max_cnt += 1;
+                },
+                Extremum::Minimum(v) => {
+                    let idx = min_cnt % mins.len();
+                    mins[idx] = v;
+                    min_cnt += 1;
+                },
+            }
+        }
+
+        let lowest_max = maxs.iter().cloned().fold(0./0., f32::min);
+        let highest_min = mins.iter().cloned().fold(0./0., f32::max);
+        let floating_cutoff = (lowest_max - highest_min) * 0.9 + highest_min;
+
         /* passing cutoff_clk from below */
-        if flag && output[band.clk as usize / 10].norm() > cutoff_clk {
+        if valid && flag && clk_value > floating_cutoff {
             /* range of output indices corresponding to data-encoding frequencies */
             let from = band.base as usize / 10;
-            let to = (band.base + band.scale * 255) as usize / 10;
+            let to = (band.base + band.scale * 256) as usize / 10;
 
             /* find the loudest frequency in that range */
             let freq_offset = output[from .. to]
@@ -86,20 +121,25 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             let freq_offset = freq_offset as u32;
 
             /* round to nearest multiple of band.scale */
-            let byte = match freq_offset % band.scale >= band.scale / 2 {
+            let maybe_byte = match freq_offset % band.scale >= band.scale / 2 {
                 true => freq_offset / band.scale + 1,
                 false => freq_offset / band.scale,
-            } as u8;
+            };
 
-            /* write out the received byte and flush */
-            out_handle.write_all(&[byte]).unwrap();
-            out_handle.flush().unwrap();
+            if maybe_byte != 0 {
+                let byte = (maybe_byte - 1) as u8;
 
-            transferred += 1;
+                /* write out the received byte and flush */
+                out_handle.write(&[byte]).unwrap();
+                out_handle.flush().unwrap();
+
+                transferred += 1;
+            }
+
             flag = false;
 
         /* passing cutoff_clk from above */
-        } else if !flag && output[band.clk as usize / 10].norm() < cutoff_clk {
+        } else if !flag && clk_value < floating_cutoff {
             flag = true;
         }
 

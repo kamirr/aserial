@@ -4,6 +4,8 @@ pub struct BiSineWave {
     /* always play freqs.0, only play freqs.1 if it's Some(_) */
     freqs: (f32, Option<f32>),
     sample_rate: u32,
+    /* ratio of amplitude of freqs.1 to freqs.0 */
+    amplitude_ratio: f32,
     /* stop playing after this many samples */
     samples: usize,
     /* used internally to keep track of time */
@@ -11,9 +13,10 @@ pub struct BiSineWave {
 }
 
 impl BiSineWave {
-    pub fn new(freqs: (f32, Option<f32>), sample_rate: u32, samples: usize) -> Self {
+    pub fn new(freqs: (f32, Option<f32>), amplitude_ratio: f32, sample_rate: u32, samples: usize) -> Self {
         BiSineWave {
             freqs,
+            amplitude_ratio,
             sample_rate,
             samples,
             num_sample: 0,
@@ -63,7 +66,7 @@ impl Iterator for BiSineWave {
                 None => 0.0,
             };
 
-            Some(a0 + a1)
+            Some(a0 + a1 * self.amplitude_ratio)
         } else {
             None
         }
