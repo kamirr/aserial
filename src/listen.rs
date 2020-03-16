@@ -5,7 +5,7 @@ use rustfft::num_complex::Complex;
 use rustfft::num_traits::Zero;
 use cpal::traits::{DeviceTrait, EventLoopTrait, HostTrait};
 use crate::Config;
-use crate::plot::plot;
+use crate::plot::Plot;
 
 /* Hann window to get rid of unwanted hight frequencies */
 fn window_fn(f: f32, n: usize, n_total: usize) -> f32 {
@@ -36,7 +36,6 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     let mut i = 0;
     let mut transferred = 0;
     let mut flag = true;
-    let mut last_frame = std::time::Instant::now();
     let start = std::time::Instant::now();
 
     /* all configuration */
@@ -49,16 +48,7 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     let stdout = std::io::stdout();
     let mut out_handle = stdout.lock();
 
-    /* rendering buffer */
-    let mut buf = vec![0u8; 800 * 600 * 4];
-
-    /* window to display the plot */
-    let mut mfb_window = minifb::Window::new(
-        "FT",
-        800,
-        600,
-        minifb::WindowOptions::default(),
-    ).unwrap();
+    let mut plt = Plot::new();
 
     /* used to compute FFT efficiently */
     let mut planner = rustfft::FFTplanner::new(false /* false=FFT, true=FFT^-1 */);
@@ -102,7 +92,7 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             } as u8;
 
             /* write out the received byte and flush */
-            out_handle.write(&[byte]).unwrap();
+            out_handle.write_all(&[byte]).unwrap();
             out_handle.flush().unwrap();
 
             transferred += 1;
@@ -113,20 +103,12 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             flag = true;
         }
 
-        /* make a new plot and refresh the window if more than 1/60th *
-         * of a second has passed since the last refres               */
-        if last_frame.elapsed() > std::time::Duration::new(0, 1000000000 / 60) {
+        if plt.needs_refreshing() {
             /* "#[SAMPLE_COUNT]; t=[TIME_IN_SECS]s" */
-            let caption = format!("#{}; t={:.1}s", transferred, start.elapsed().as_secs_f32());
-            /* render the plot to the preallocated buffer */
-            plot(caption, &mut buf, &output);
-            /* refresh the window using that buffer */
-            mfb_window
-                .update_with_buffer(unsafe { std::mem::transmute(&buf[..]) })
-                .unwrap();
-
-            /* mark the time of last refresh */
-            last_frame = std::time::Instant::now();
+            let time = start.elapsed().as_secs_f32();
+            let caption = format!("#{}; t={:.1}s", transferred, time);
+            /* refresh the plot */
+            plt.refresh(caption, &output);
         }
     }
 
