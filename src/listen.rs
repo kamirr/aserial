@@ -82,7 +82,7 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             .fold(0.0, |a, b| a + b)
             / (band.base / 10 - 5) as f32;
 
-        let valid = clk_value / baseline > 40.0;
+        let valid = clk_value / baseline > conf.noise_tolerance;
 
         if let Some(ex) = ef.push(clk_value) {
             match ex {

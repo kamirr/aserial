@@ -19,6 +19,11 @@ pub struct Config {
     /* time for playing encoded data with and w/o the clock */
     pub clk_high_time: f32,
     pub clk_low_time: f32,
+
+    /* proportion of the clock intensity to the average intensity   *
+     * over the interval [0; band.base) must be higher than this to *
+     * be perceived as a valid byte                                 */
+    pub noise_tolerance: f32,
 }
 
 impl Config {
@@ -28,6 +33,7 @@ impl Config {
             band: Band { clk: 15000, base: 4000, scale: 40 },
             clk_low_time: 0.025,
             clk_high_time: 0.025,
+            noise_tolerance: 40.0,
         }
     }
 
@@ -37,6 +43,7 @@ impl Config {
             band: Band { clk: 1000, base: 4000, scale: 30 },
             clk_low_time: 0.075,
             clk_high_time: 0.075,
+            noise_tolerance: 40.0,
         }
     }
 }
