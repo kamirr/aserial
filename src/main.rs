@@ -35,8 +35,8 @@ impl Config {
     pub fn loud() -> Config {
         Config {
             band: Band { clk: 1000, base: 4000, scale: 30 },
-            clk_low_time: 0.05,
-            clk_high_time: 0.05,
+            clk_low_time: 0.075,
+            clk_high_time: 0.075,
         }
     }
 }

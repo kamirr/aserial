@@ -76,13 +76,13 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
         let clk_idx = band.clk as usize / 10;
         let clk_value = output[clk_idx].norm();
 
-        let baseline = output[0 .. band.base as usize / 10 - 5]
+        let baseline = output[0 .. band.base as usize / 10 - 10]
             .iter()
             .map(|c| c.norm())
             .fold(0.0, |a, b| a + b)
             / (band.base / 10 - 5) as f32;
 
-        let valid = clk_value / baseline > 10.0;
+        let valid = clk_value / baseline > 40.0;
 
         if let Some(ex) = ef.push(clk_value) {
             match ex {
@@ -148,7 +148,7 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             let time = start.elapsed().as_secs_f32();
             let caption = format!("#{}; t={:.1}s", transferred, time);
             /* refresh the plot */
-            plt.refresh(caption, &output);
+            plt.refresh(caption, &output, highest_min, lowest_max);
         }
     }
 

@@ -36,8 +36,8 @@ impl Plot {
     }
 
     /* plot the FFT */
-    pub fn refresh(&mut self, caption: String, output: &Vec<Complex<f32>>) {
-        self.draw(caption, output);
+    pub fn refresh(&mut self, caption: String, output: &Vec<Complex<f32>>, hi_min: f32, lo_max: f32) {
+        self.draw(caption, output, hi_min, lo_max);
         self.render();
 
         /* mark the time of last refresh */
@@ -45,7 +45,7 @@ impl Plot {
     }
 
     /* draw the plot in a buffer */
-    fn draw(&mut self, caption: String, output: &Vec<Complex<f32>>) {
+    fn draw(&mut self, caption: String, output: &Vec<Complex<f32>>, hi_min: f32, lo_max: f32) {
         /* like, eh, copied from an example from plotters repo */
         let root = BitMapBackend::<BGRXPixel>::with_buffer_and_format(&mut self.buf[..], self.size)
             .unwrap()
@@ -62,7 +62,7 @@ impl Plot {
             .margin(5)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_ranged(30f32..1600f32, 0f32..2f32)
+            .build_ranged(30f32 .. 1600f32, 0f32 .. lo_max*2.0)
             .unwrap();
         chart.configure_mesh().draw().unwrap();
 
@@ -75,6 +75,20 @@ impl Plot {
                 &RED,
             ))
             .unwrap();
+
+        /* plot the clk variation range */
+        chart
+            .draw_series(LineSeries::new(
+                (30..1600).map(|n| (n as f32, lo_max)),
+                &GREEN,
+            ))
+            .unwrap();
+        chart
+            .draw_series(LineSeries::new(
+                (30..1600).map(|n| (n as f32, hi_min)),
+                &BLUE,
+            ))
+                .unwrap();
 
         /* copied as well, I guess this part does the rendering and stuff */
         chart
