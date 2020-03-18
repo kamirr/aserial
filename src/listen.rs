@@ -10,20 +10,20 @@ use crate::plot::Plot;
 
 /* Hann window to get rid of unwanted hight frequencies */
 fn window_fn(f: f32, n: usize, n_total: usize) -> f32 {
-    f * (3.1415 * n as f32 / n_total as f32).sin().powi(2)
+    f * (std::f32::consts::PI * n as f32 / n_total as f32).sin().powi(2)
 }
 
 /* converts each a+bi to r+0i where r=(a*a + b*b)/window_size */
 fn normalize(output: &mut [Complex<f32>], window_size: usize) {
-    for n in 0 .. output.len() {
-        let value = output[n].norm_sqr();
+    for z in output {
+        let value = z.norm_sqr();
         let normalized = value / window_size as f32;
-        output[n] = Complex::new(normalized, 0.0);
+        *z = Complex::new(normalized, 0.0);
     }
 }
 
 /* passes samples through a window window_fn */
-fn get_windowed_samples(window: &Vec<f32>) -> Vec<Complex<f32>> {
+fn get_windowed_samples(window: &[f32]) -> Vec<Complex<f32>> {
     window
         .iter()
         .enumerate()
@@ -99,8 +99,8 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             }
         }
 
-        let lowest_max = maxs.iter().cloned().fold(0./0., f32::min);
-        let highest_min = mins.iter().cloned().fold(0./0., f32::max);
+        let lowest_max = maxs.iter().cloned().fold(std::f32::NAN, f32::min);
+        let highest_min = mins.iter().cloned().fold(std::f32::NAN, f32::max);
         let floating_cutoff = (lowest_max - highest_min) * 0.9 + highest_min;
 
         /* passing cutoff_clk from below */
@@ -121,16 +121,17 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             let freq_offset = freq_offset as u32;
 
             /* round to nearest multiple of band.scale */
-            let maybe_byte = match freq_offset % band.scale >= band.scale / 2 {
-                true => freq_offset / band.scale + 1,
-                false => freq_offset / band.scale,
+            let maybe_byte = if freq_offset % band.scale >= band.scale / 2 {
+                freq_offset / band.scale + 1
+            } else {
+                freq_offset / band.scale
             };
 
             if maybe_byte != 0 {
                 let byte = (maybe_byte - 1) as u8;
 
                 /* write out the received byte and flush */
-                out_handle.write(&[byte]).unwrap();
+                out_handle.write_all(&[byte]).unwrap();
                 out_handle.flush().unwrap();
 
                 transferred += 1;
@@ -201,7 +202,7 @@ fn audio_input(sender: mpsc::Sender<Vec<f32>>) {
                     }
                 },
                 /* ignore all buffers that don't have F32 samples */
-                _ => { }
+                _ => panic!("audio input samples aren't f32"),
             }
         }
     });

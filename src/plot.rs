@@ -1,9 +1,10 @@
 use rustfft::num_complex::Complex;
 use plotters::drawing::bitmap_pixel::BGRXPixel;
 use plotters::prelude::*;
+use std::slice::from_raw_parts_mut;
 
 pub struct Plot {
-    buf: Vec<u8>,
+    buf: Vec<u32>,
     size: (u32, u32),
     win: minifb::Window,
     last_frame: std::time::Instant,
@@ -13,7 +14,7 @@ impl Plot {
     /* create a new plotter */
     pub fn new() -> Self {
         let size = (800u32, 600u32);
-        let buf = vec![0u8; (size.0 * size.1 * 4) as usize];
+        let buf = vec![0u32; (size.0 * size.1) as usize];
         let win = minifb::Window::new(
             "FT",
             size.0 as usize,
@@ -31,12 +32,12 @@ impl Plot {
     }
 
     pub fn needs_refreshing(&self) -> bool {
-        let tick = std::time::Duration::new(0, 1000000000 / 60);
+        let tick = std::time::Duration::new(0, 1_000_000_000 / 60);
         self.last_frame.elapsed() > tick
     }
 
     /* plot the FFT */
-    pub fn refresh(&mut self, caption: String, output: &Vec<Complex<f32>>, hi_min: f32, lo_max: f32) {
+    pub fn refresh(&mut self, caption: String, output: &[Complex<f32>], hi_min: f32, lo_max: f32) {
         self.draw(caption, output, hi_min, lo_max);
         self.render();
 
@@ -45,9 +46,16 @@ impl Plot {
     }
 
     /* draw the plot in a buffer */
-    fn draw(&mut self, caption: String, output: &Vec<Complex<f32>>, hi_min: f32, lo_max: f32) {
+    fn draw(&mut self, caption: String, output: &[Complex<f32>], hi_min: f32, lo_max: f32) {
+        /* plotters needs a u8 buffer to write to, hence *
+         * this cast from &mut[u32] to &mut[u8]          */
+        let buf_u8: &mut [u8] = unsafe {from_raw_parts_mut(
+            &mut self.buf[..] as *mut [u32] as *mut u8,
+            (self.size.0 * self.size.1 * 4) as usize
+        )};
+
         /* like, eh, copied from an example from plotters repo */
-        let root = BitMapBackend::<BGRXPixel>::with_buffer_and_format(&mut self.buf[..], self.size)
+        let root = BitMapBackend::<BGRXPixel>::with_buffer_and_format(buf_u8, self.size)
             .unwrap()
             .into_drawing_area();
 
@@ -101,9 +109,9 @@ impl Plot {
 
     /* render the buffer to the screen */
     fn render(&mut self) {
-        /* refresh the window using that buffer */
+        /* fill the window using the buffer buffer */
         self.win
-            .update_with_buffer(unsafe { std::mem::transmute(&self.buf[..]) })
+            .update_with_buffer(&self.buf)
             .unwrap();
     }
 }

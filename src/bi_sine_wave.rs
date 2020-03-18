@@ -40,7 +40,7 @@ impl Source for BiSineWave {
 
     /* length as time with units */
     fn total_duration(&self) -> Option<std::time::Duration> {
-        let nsecs = 1000000000 as f32 * self.samples as f32 / self.sample_rate as f32;
+        let nsecs = 1_000_000_000 as f32 * self.samples as f32 / self.sample_rate as f32;
         Some(std::time::Duration::new(0, nsecs as u32))
     }
 }
@@ -57,7 +57,7 @@ impl Iterator for BiSineWave {
             /* time in secs */
             let t = self.num_sample as f32 / self.sample_rate as f32;
             /* multiply by 2π so that 1Hz corresponds to one period of sine */
-            let cnst = 2.0 * 3.14159265 * t;
+            let cnst = 2.0 * std::f32::consts::PI * t;
             /* value of frequency 1 at time=t */
             let a0 = (self.freqs.0 * cnst).sin();
             /* if there's freq 2, take it's value at time=t, otherwise 0 */

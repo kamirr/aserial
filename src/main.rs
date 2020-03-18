@@ -38,7 +38,7 @@ impl Config {
     }
 
     /* config for loud transmission */
-    pub fn loud() -> Config {
+    pub fn loud() -> Self {
         Config {
             band: Band { clk: 1000, base: 4000, scale: 30 },
             clk_low_time: 0.075,
