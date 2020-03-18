@@ -1,7 +1,7 @@
+use rodio::Sink;
+use std::io::Read;
 use std::sync::mpsc;
 use std::thread;
-use std::io::Read;
-use rodio::Sink;
 
 use crate::frame::*;
 use crate::Config;
@@ -17,7 +17,7 @@ fn play(receiver: mpsc::Receiver<Vec<u8>>, conf: Config) {
     /* take buffers from output */
     for bytes in receiver.iter() {
         /* play 4 sync sounds to let listener adjust */
-        for _ in 0 .. 4 {
+        for _ in 0..4 {
             fb.build(false, 0, &sink, conf.clk_low_time);
             fb.build(true, 0, &sink, conf.clk_high_time);
         }

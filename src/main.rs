@@ -1,14 +1,14 @@
-mod extremum_finder;
 mod bi_sine_wave;
+mod extremum_finder;
 mod frame;
 mod listen;
 mod plot;
 mod talk;
 
-use std::process::exit;
-use std::env::args;
 use frame::Band;
 use listen::listen;
+use std::env::args;
+use std::process::exit;
 use talk::talk;
 
 #[derive(Clone, Copy)]
@@ -30,7 +30,11 @@ impl Config {
     /* config for transmission over cable */
     pub fn cable() -> Self {
         Config {
-            band: Band { clk: 15000, base: 4000, scale: 40 },
+            band: Band {
+                clk: 15000,
+                base: 4000,
+                scale: 40,
+            },
             clk_low_time: 0.025,
             clk_high_time: 0.025,
             noise_tolerance: 40.0,
@@ -40,7 +44,11 @@ impl Config {
     /* config for loud transmission */
     pub fn loud() -> Self {
         Config {
-            band: Band { clk: 1000, base: 4000, scale: 30 },
+            band: Band {
+                clk: 1000,
+                base: 4000,
+                scale: 30,
+            },
             clk_low_time: 0.075,
             clk_high_time: 0.075,
             noise_tolerance: 40.0,

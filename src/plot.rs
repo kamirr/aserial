@@ -1,6 +1,6 @@
-use rustfft::num_complex::Complex;
 use plotters::drawing::bitmap_pixel::BGRXPixel;
 use plotters::prelude::*;
+use rustfft::num_complex::Complex;
 use std::slice::from_raw_parts_mut;
 
 pub struct Plot {
@@ -20,14 +20,15 @@ impl Plot {
             size.0 as usize,
             size.1 as usize,
             minifb::WindowOptions::default(),
-        ).unwrap();
+        )
+        .unwrap();
         let last_frame = std::time::Instant::now();
 
         Plot {
             buf,
             size,
             win,
-            last_frame
+            last_frame,
         }
     }
 
@@ -49,10 +50,12 @@ impl Plot {
     fn draw(&mut self, caption: String, output: &[Complex<f32>], hi_min: f32, lo_max: f32) {
         /* plotters needs a u8 buffer to write to, hence *
          * this cast from &mut[u32] to &mut[u8]          */
-        let buf_u8: &mut [u8] = unsafe {from_raw_parts_mut(
-            &mut self.buf[..] as *mut [u32] as *mut u8,
-            (self.size.0 * self.size.1 * 4) as usize
-        )};
+        let buf_u8: &mut [u8] = unsafe {
+            from_raw_parts_mut(
+                &mut self.buf[..] as *mut [u32] as *mut u8,
+                (self.size.0 * self.size.1 * 4) as usize,
+            )
+        };
 
         /* like, eh, copied from an example from plotters repo */
         let root = BitMapBackend::<BGRXPixel>::with_buffer_and_format(buf_u8, self.size)
@@ -60,9 +63,7 @@ impl Plot {
             .into_drawing_area();
 
         /* clears the plot */
-        root
-            .fill(&WHITE)
-            .unwrap();
+        root.fill(&WHITE).unwrap();
 
         /* builds the chart */
         let mut chart = ChartBuilder::on(&root)
@@ -70,16 +71,14 @@ impl Plot {
             .margin(5)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_ranged(30f32 .. 1600f32, 0f32 .. lo_max*2.0)
+            .build_ranged(30f32..1600f32, 0f32..lo_max * 2.0)
             .unwrap();
         chart.configure_mesh().draw().unwrap();
 
         /* take the norm of each number in FFTs output and plot it (in RED) */
         chart
             .draw_series(LineSeries::new(
-                (30..1600).map(|n| {
-                    (n as f32, output[n].norm() as f32)
-                }),
+                (30..1600).map(|n| (n as f32, output[n].norm() as f32)),
                 &RED,
             ))
             .unwrap();
@@ -96,7 +95,7 @@ impl Plot {
                 (30..1600).map(|n| (n as f32, hi_min)),
                 &BLUE,
             ))
-                .unwrap();
+            .unwrap();
 
         /* copied as well, I guess this part does the rendering and stuff */
         chart
@@ -110,8 +109,6 @@ impl Plot {
     /* render the buffer to the screen */
     fn render(&mut self) {
         /* fill the window using the buffer buffer */
-        self.win
-            .update_with_buffer(&self.buf)
-            .unwrap();
+        self.win.update_with_buffer(&self.buf).unwrap();
     }
 }

@@ -1,16 +1,18 @@
+use crate::extremum_finder::*;
+use crate::plot::Plot;
+use crate::Config;
+use cpal::traits::{DeviceTrait, EventLoopTrait, HostTrait};
+use rustfft::num_complex::Complex;
+use rustfft::num_traits::Zero;
 use std::io::Write;
 use std::sync::mpsc;
 use std::thread;
-use rustfft::num_complex::Complex;
-use rustfft::num_traits::Zero;
-use cpal::traits::{DeviceTrait, EventLoopTrait, HostTrait};
-use crate::extremum_finder::*;
-use crate::Config;
-use crate::plot::Plot;
 
 /* Hann window to get rid of unwanted hight frequencies */
 fn window_fn(f: f32, n: usize, n_total: usize) -> f32 {
-    f * (std::f32::consts::PI * n as f32 / n_total as f32).sin().powi(2)
+    f * (std::f32::consts::PI * n as f32 / n_total as f32)
+        .sin()
+        .powi(2)
 }
 
 /* converts each a+bi to r+0i where r=(a*a + b*b)/window_size */
@@ -76,7 +78,7 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
         let clk_idx = band.clk as usize / 10;
         let clk_value = output[clk_idx].norm();
 
-        let baseline = output[0 .. band.base as usize / 10 - 10]
+        let baseline = output[0..band.base as usize / 10 - 10]
             .iter()
             .map(|c| c.norm())
             .fold(0.0, |a, b| a + b)
@@ -90,12 +92,12 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
                     let idx = max_cnt % maxs.len();
                     maxs[idx] = v;
                     max_cnt += 1;
-                },
+                }
                 Extremum::Minimum(v) => {
                     let idx = min_cnt % mins.len();
                     mins[idx] = v;
                     min_cnt += 1;
-                },
+                }
             }
         }
 
@@ -110,13 +112,15 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             let to = (band.base + band.scale * 256) as usize / 10;
 
             /* find the loudest frequency in that range */
-            let freq_offset = output[from .. to]
+            let freq_offset = output[from..to]
                 .iter()
                 .enumerate()
                 /* the line below maps floats to integers while preserving the order *
                  * because float aren't ordered (cuz NaNs) and we need a maximum     */
                 .max_by_key(|(_, f)| (f.norm_sqr() * 10000.0) as u32)
-                .unwrap().0 * 10; /* mutliply by 10 because the unit is 0.1Hz and I want 1Hz */
+                .unwrap()
+                .0
+                * 10; /* mutliply by 10 because the unit is 0.1Hz and I want 1Hz */
             /* map it to integers */
             let freq_offset = freq_offset as u32;
 
@@ -156,13 +160,19 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     println!("\n=================\nprocessed {} windows", i);
 }
 
-fn process_sample(sample: f32, window: &mut Vec<f32>, window_size: usize, step: usize, sender: &mpsc::Sender<Vec<f32>>) {
+fn process_sample(
+    sample: f32,
+    window: &mut Vec<f32>,
+    window_size: usize,
+    step: usize,
+    sender: &mpsc::Sender<Vec<f32>>,
+) {
     window.push(sample);
 
     /* if the window is of necessary size... */
     if window.len() == window_size {
         /* copy all data that should be retained for the next window */
-        let mut other_window: Vec<f32> = window[step .. window.len()].into();
+        let mut other_window: Vec<f32> = window[step..window.len()].into();
         /* swap it with the current window */
         std::mem::swap(&mut other_window, window);
 
@@ -176,10 +186,14 @@ fn audio_input(sender: mpsc::Sender<Vec<f32>>) {
     /* start the event loop with the stream of samples from the microphone */
     let host = cpal::default_host();
     let event_loop = host.event_loop();
-    let device = host.default_input_device().expect("no input device available");
+    let device = host
+        .default_input_device()
+        .expect("no input device available");
     let format = device.default_input_format().unwrap();
     let stream_id = event_loop.build_input_stream(&device, &format).unwrap();
-    event_loop.play_stream(stream_id).expect("failed to play_stream");
+    event_loop
+        .play_stream(stream_id)
+        .expect("failed to play_stream");
 
     /* collects samples from microphone */
     let mut window = Vec::<f32>::new();
@@ -191,7 +205,7 @@ fn audio_input(sender: mpsc::Sender<Vec<f32>>) {
     /* run a function for each new event */
     event_loop.run(move |_, stream_result| {
         /* if the event is an input buffer... */
-        if let cpal::StreamData::Input{ buffer } = stream_result.unwrap() {
+        if let cpal::StreamData::Input { buffer } = stream_result.unwrap() {
             /* check the buffer type... */
             match buffer {
                 /* ATM only support buffers of f32 samples */
@@ -200,7 +214,7 @@ fn audio_input(sender: mpsc::Sender<Vec<f32>>) {
                     for sample in &*buffer {
                         process_sample(*sample, &mut window, window_size, step, &sender);
                     }
-                },
+                }
                 /* ignore all buffers that don't have F32 samples */
                 _ => panic!("audio input samples aren't f32"),
             }

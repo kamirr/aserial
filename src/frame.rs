@@ -1,5 +1,5 @@
-use rodio::Sink;
 use crate::bi_sine_wave::BiSineWave;
+use rodio::Sink;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Band {
@@ -10,7 +10,7 @@ pub struct Band {
 
 #[derive(Debug)]
 pub struct FrameBuilder {
-    band: Band
+    band: Band,
 }
 
 impl FrameBuilder {
@@ -26,10 +26,7 @@ impl FrameBuilder {
         let clk_freq = self.band.clk as f32;
 
         /* always play byte_freq, only play clock freq if `clk`==true */
-        let freqs = (
-            data_freq,
-            if clk { Some(clk_freq) } else { None }
-        );
+        let freqs = (data_freq, if clk { Some(clk_freq) } else { None });
 
         let ratio = clk_freq / data_freq;
 

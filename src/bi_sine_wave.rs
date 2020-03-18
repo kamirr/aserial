@@ -13,7 +13,12 @@ pub struct BiSineWave {
 }
 
 impl BiSineWave {
-    pub fn new(freqs: (f32, Option<f32>), amplitude_ratio: f32, sample_rate: u32, samples: usize) -> Self {
+    pub fn new(
+        freqs: (f32, Option<f32>),
+        amplitude_ratio: f32,
+        sample_rate: u32,
+        samples: usize,
+    ) -> Self {
         BiSineWave {
             freqs,
             amplitude_ratio,
@@ -82,4 +87,4 @@ impl Iterator for BiSineWave {
 }
 
 /* mark that the sound has a known, exact length */
-impl ExactSizeIterator for BiSineWave { }
+impl ExactSizeIterator for BiSineWave {}
