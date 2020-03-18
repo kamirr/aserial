@@ -16,11 +16,10 @@ fn window_fn(f: f32, n: usize, n_total: usize) -> f32 {
 }
 
 /* converts each a+bi to r+0i where r=(a*a + b*b)/window_size */
-fn normalize(output: &mut [Complex<f32>], window_size: usize) {
-    for z in output {
-        let value = z.norm_sqr();
-        let normalized = value / window_size as f32;
-        *z = Complex::new(normalized, 0.0);
+fn normalize(fft: &[Complex<f32>], out: &mut [f32], window_size: usize) {
+    assert_eq!(fft.len(), out.len(), "yee? :)");
+    for k in 0..out.len() {
+        out[k] = fft[k].norm_sqr() / window_size as f32;
     }
 }
 
@@ -59,7 +58,8 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
 
     /* used to compute FFT efficiently */
     let mut planner = rustfft::FFTplanner::new(false /* false=FFT, true=FFT^-1 */);
-    let mut output: Vec<Complex<f32>> = vec![Complex::zero(); window_size];
+    let mut fft_output: Vec<Complex<f32>> = vec![Complex::zero(); window_size];
+    let mut output: Vec<f32> = vec![0.0; window_size];
 
     /* take each window from the microphone */
     for window in receiver.iter() {
@@ -70,17 +70,16 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
         /* compute FFT */
         planner
             .plan_fft(window_size)
-            .process(&mut input, &mut output);
+            .process(&mut input, &mut fft_output);
 
         /* 'normalize' FFT output */
-        normalize(&mut output, window_size);
+        normalize(&fft_output, &mut output, window_size);
 
         let clk_idx = band.clk as usize / 10;
-        let clk_value = output[clk_idx].norm();
+        let clk_value = output[clk_idx];
 
         let baseline = output[0..band.base as usize / 10 - 10]
             .iter()
-            .map(|c| c.norm())
             .fold(0.0, |a, b| a + b)
             / (band.base / 10 - 5) as f32;
 
@@ -115,9 +114,8 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             let freq_offset = output[from..to]
                 .iter()
                 .enumerate()
-                /* the line below maps floats to integers while preserving the order *
-                 * because float aren't ordered (cuz NaNs) and we need a maximum     */
-                .max_by_key(|(_, f)| (f.norm_sqr() * 10000.0) as u32)
+                /* partial ordering is neccessary because of NaNs and infs */
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
                 .unwrap()
                 .0
                 * 10; /* mutliply by 10 because the unit is 0.1Hz and I want 1Hz */

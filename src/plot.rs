@@ -1,6 +1,5 @@
 use plotters::drawing::bitmap_pixel::BGRXPixel;
 use plotters::prelude::*;
-use rustfft::num_complex::Complex;
 use std::slice::from_raw_parts_mut;
 
 pub struct Plot {
@@ -38,7 +37,7 @@ impl Plot {
     }
 
     /* plot the FFT */
-    pub fn refresh(&mut self, caption: String, output: &[Complex<f32>], hi_min: f32, lo_max: f32) {
+    pub fn refresh(&mut self, caption: String, output: &[f32], hi_min: f32, lo_max: f32) {
         self.draw(caption, output, hi_min, lo_max);
         self.render();
 
@@ -47,7 +46,7 @@ impl Plot {
     }
 
     /* draw the plot in a buffer */
-    fn draw(&mut self, caption: String, output: &[Complex<f32>], hi_min: f32, lo_max: f32) {
+    fn draw(&mut self, caption: String, output: &[f32], hi_min: f32, lo_max: f32) {
         /* plotters needs a u8 buffer to write to, hence *
          * this cast from &mut[u32] to &mut[u8]          */
         let buf_u8: &mut [u8] = unsafe {
@@ -78,7 +77,7 @@ impl Plot {
         /* take the norm of each number in FFTs output and plot it (in RED) */
         chart
             .draw_series(LineSeries::new(
-                (30..1600).map(|n| (n as f32, output[n].norm() as f32)),
+                (30..1600).map(|n| (n as f32, output[n])),
                 &RED,
             ))
             .unwrap();
