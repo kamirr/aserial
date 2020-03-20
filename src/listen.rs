@@ -37,6 +37,7 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     /* bookkeeping */
     let mut i = 0;
     let mut transferred = 0;
+    let mut min_vbr = 99999f32;
     let start = std::time::Instant::now();
 
     /* all configuration */
@@ -87,6 +88,7 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             if let Some(ex) = finders[k].push(val) {
                 if let Extremum::Maximum(_) = ex {
                     if above && k != 0 {
+                        min_vbr = min_vbr.min(vbr);
                         out_handle.write_all(&[(k - 1) as u8]).unwrap();
                         out_handle.flush().unwrap();
                         transferred += 1;
