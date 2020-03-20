@@ -1,27 +1,23 @@
 use rodio::source::Source;
 
-pub struct BiSineWave {
-    /* always play freqs.0, only play freqs.1 if it's Some(_) */
-    freqs: (f32, Option<f32>),
+pub struct MaybeSineWave {
+    /* only play a freq if it's Some(_) */
+    freq: Option<f32>,
     sample_rate: u32,
-    /* ratio of amplitude of freqs.1 to freqs.0 */
-    amplitude_ratio: f32,
     /* stop playing after this many samples */
     samples: usize,
     /* used internally to keep track of time */
     num_sample: usize,
 }
 
-impl BiSineWave {
+impl MaybeSineWave {
     pub fn new(
-        freqs: (f32, Option<f32>),
-        amplitude_ratio: f32,
+        freq: Option<f32>,
         sample_rate: u32,
         samples: usize,
     ) -> Self {
-        BiSineWave {
-            freqs,
-            amplitude_ratio,
+        MaybeSineWave {
+            freq,
             sample_rate,
             samples,
             num_sample: 0,
@@ -29,7 +25,7 @@ impl BiSineWave {
     }
 }
 
-impl Source for BiSineWave {
+impl Source for MaybeSineWave {
     /* length of sound in samples */
     fn current_frame_len(&self) -> Option<usize> {
         Some(self.samples)
@@ -50,7 +46,7 @@ impl Source for BiSineWave {
     }
 }
 
-impl Iterator for BiSineWave {
+impl Iterator for MaybeSineWave {
     type Item = f32;
 
     #[inline]
@@ -63,15 +59,11 @@ impl Iterator for BiSineWave {
             let t = self.num_sample as f32 / self.sample_rate as f32;
             /* multiply by 2π so that 1Hz corresponds to one period of sine */
             let cnst = 2.0 * std::f32::consts::PI * t;
-            /* value of frequency 1 at time=t */
-            let a0 = (self.freqs.0 * cnst).sin();
-            /* if there's freq 2, take it's value at time=t, otherwise 0 */
-            let a1 = match self.freqs.1 {
-                Some(f1) => (f1 * cnst).sin(),
+            
+            Some(match self.freq {
+                Some(f) => (f * cnst).sin(),
                 None => 0.0,
-            };
-
-            Some(a0 + a1 * self.amplitude_ratio)
+            })
         } else {
             None
         }
@@ -87,4 +79,4 @@ impl Iterator for BiSineWave {
 }
 
 /* mark that the sound has a known, exact length */
-impl ExactSizeIterator for BiSineWave {}
+impl ExactSizeIterator for MaybeSineWave {}

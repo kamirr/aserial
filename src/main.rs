@@ -1,4 +1,4 @@
-mod bi_sine_wave;
+mod maybe_sine_wave;
 mod extremum_finder;
 mod frame;
 mod listen;
@@ -16,14 +16,14 @@ pub struct Config {
     /* frequencies used for communication */
     pub band: Band,
 
-    /* time for playing encoded data with and w/o the clock */
-    pub clk_high_time: f32,
-    pub clk_low_time: f32,
+    /* time for playing encoded data and silence */
+    pub loud_time: f32,
+    pub silent_time: f32,
 
-    /* proportion of the clock intensity to the average intensity   *
-     * over the interval [0; band.base) must be higher than this to *
-     * be perceived as a valid byte                                 */
-    pub noise_tolerance: f32,
+    /* ratio of the amplitude of data-encoding frequency  *
+     * to the baseline must be above this for the program *
+     * to not discard the data as noise                   */
+    pub min_noise_ratio: f32,
 }
 
 impl Config {
@@ -31,13 +31,12 @@ impl Config {
     pub fn cable() -> Self {
         Config {
             band: Band {
-                clk: 15000,
                 base: 4000,
                 scale: 40,
             },
-            clk_low_time: 0.025,
-            clk_high_time: 0.025,
-            noise_tolerance: 40.0,
+            loud_time: 0.025,
+            silent_time: 0.025,
+            min_noise_ratio: 100.0,
         }
     }
 
@@ -45,13 +44,12 @@ impl Config {
     pub fn loud() -> Self {
         Config {
             band: Band {
-                clk: 1000,
                 base: 4000,
-                scale: 30,
+                scale: 34,
             },
-            clk_low_time: 0.075,
-            clk_high_time: 0.075,
-            noise_tolerance: 40.0,
+            loud_time: 0.075,
+            silent_time: 0.075,
+            min_noise_ratio: 100.0,
         }
     }
 }

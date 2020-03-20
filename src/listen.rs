@@ -36,13 +36,7 @@ fn get_windowed_samples(window: &[f32]) -> Vec<Complex<f32>> {
 fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     /* bookkeeping */
     let mut i = 0;
-    let mut max_cnt = 0;
-    let mut min_cnt = 0;
     let mut transferred = 0;
-    let mut flag = true; /* is clk below cutoff_clk? */
-    let mut maxs = vec![0.0; 3];
-    let mut mins = vec![0.0; 3];
-    let mut ef = ExtremumFinder::new();
     let start = std::time::Instant::now();
 
     /* all configuration */
@@ -61,6 +55,8 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     let mut fft_output: Vec<Complex<f32>> = vec![Complex::zero(); window_size];
     let mut output: Vec<f32> = vec![0.0; window_size];
 
+    let mut finders = [ExtremumFinder::new(); 257];
+
     /* take each window from the microphone */
     for window in receiver.iter() {
         i += 1;
@@ -75,75 +71,28 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
         /* 'normalize' FFT output */
         normalize(&fft_output, &mut output, window_size);
 
-        let clk_idx = band.clk as usize / 10;
-        let clk_value = output[clk_idx];
-
-        let baseline = output[0..band.base as usize / 10 - 10]
-            .iter()
-            .fold(0.0, |a, b| a + b)
-            / (band.base / 10 - 5) as f32;
-
-        let valid = clk_value / baseline > conf.noise_tolerance;
-
-        if let Some(ex) = ef.push(clk_value) {
-            match ex {
-                Extremum::Maximum(v) => {
-                    let idx = max_cnt % maxs.len();
-                    maxs[idx] = v;
-                    max_cnt += 1;
-                }
-                Extremum::Minimum(v) => {
-                    let idx = min_cnt % mins.len();
-                    mins[idx] = v;
-                    min_cnt += 1;
-                }
-            }
-        }
-
-        let lowest_max = maxs.iter().cloned().fold(std::f32::NAN, f32::min);
-        let highest_min = mins.iter().cloned().fold(std::f32::NAN, f32::max);
-        let floating_cutoff = (lowest_max - highest_min) * 0.9 + highest_min;
-
-        /* passing cutoff_clk from below */
-        if valid && flag && clk_value > floating_cutoff {
-            /* range of output indices corresponding to data-encoding frequencies */
+        for k in 0 .. 257usize {
+            let freq_idx = (band.base + band.scale * k as u32) as usize / 10;
             let from = band.base as usize / 10;
-            let to = (band.base + band.scale * 256) as usize / 10;
+            let to = (band.base + band.scale * 255) as usize / 10;
+            let val = output[freq_idx];
 
-            /* find the loudest frequency in that range */
-            let freq_offset = output[from..to]
+            let baseline = output[from..to]
                 .iter()
-                .enumerate()
-                /* partial ordering is neccessary because of NaNs and infs */
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
-                .unwrap()
-                .0
-                * 10; /* mutliply by 10 because the unit is 0.1Hz and I want 1Hz */
-            /* map it to integers */
-            let freq_offset = freq_offset as u32;
+                .fold(0.0, |a, b| a + b)
+                / (to - from) as f32;
 
-            /* round to nearest multiple of band.scale */
-            let maybe_byte = if freq_offset % band.scale >= band.scale / 2 {
-                freq_offset / band.scale + 1
-            } else {
-                freq_offset / band.scale
-            };
-
-            if maybe_byte != 0 {
-                let byte = (maybe_byte - 1) as u8;
-
-                /* write out the received byte and flush */
-                out_handle.write_all(&[byte]).unwrap();
-                out_handle.flush().unwrap();
-
-                transferred += 1;
+            let vbr = val / baseline;
+            let above = vbr > conf.min_noise_ratio;
+            if let Some(ex) = finders[k].push(val) {
+                if let Extremum::Maximum(_) = ex {
+                    if above && k != 0 {
+                        out_handle.write_all(&[(k - 1) as u8]).unwrap();
+                        out_handle.flush().unwrap();
+                        transferred += 1;
+                    }
+                }
             }
-
-            flag = false;
-
-        /* passing cutoff_clk from above */
-        } else if !flag && clk_value < floating_cutoff {
-            flag = true;
         }
 
         if plt.needs_refreshing() {
@@ -151,7 +100,7 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
             let time = start.elapsed().as_secs_f32();
             let caption = format!("#{}; t={:.1}s", transferred, time);
             /* refresh the plot */
-            plt.refresh(caption, &output, highest_min, lowest_max);
+            plt.refresh(caption, &output);
         }
     }
 

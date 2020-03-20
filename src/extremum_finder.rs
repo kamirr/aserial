@@ -4,6 +4,7 @@ pub enum Extremum {
     Maximum(f32),
 }
 
+#[derive(Clone, Copy)]
 pub struct ExtremumFinder {
     t_m_2: Option<f32>,
     t_m_1: Option<f32>,

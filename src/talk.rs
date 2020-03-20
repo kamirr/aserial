@@ -9,6 +9,8 @@ use crate::Config;
 /* play sounds corresponding to incoming bytes */
 fn play(receiver: mpsc::Receiver<Vec<u8>>, conf: Config) {
     let mut fb = FrameBuilder::new(conf.band);
+    let mut transferred = 0;
+    let start = std::time::Instant::now();
 
     /* build a sink from the default output device */
     let device = rodio::default_output_device().unwrap();
@@ -16,21 +18,19 @@ fn play(receiver: mpsc::Receiver<Vec<u8>>, conf: Config) {
 
     /* take buffers from output */
     for bytes in receiver.iter() {
-        /* play 4 sync sounds to let listener adjust */
-        for _ in 0..4 {
-            fb.build(false, 0, &sink, conf.clk_low_time);
-            fb.build(true, 0, &sink, conf.clk_high_time);
-        }
-
         /* for each byte play it twice: once w/o the clock, and once with it */
         for b in bytes {
-            fb.build(false, b as u32 + 1, &sink, conf.clk_low_time);
-            fb.build(true, b as u32 + 1, &sink, conf.clk_high_time);
+            fb.build(Some(b as u32 + 1), &sink, conf.loud_time);
+            fb.build(None, &sink, conf.silent_time);
+            transferred += 1;
         }
     }
 
     /* sleep until all the sounds have finished playing */
     sink.sleep_until_end();
+
+    let rate = transferred as f32 / start.elapsed().as_secs_f32();
+    println!("sent {}B; rate: {:.2}Bps", transferred, rate);
 }
 
 /* read bytes from stding and send them to be played */

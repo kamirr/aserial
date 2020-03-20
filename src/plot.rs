@@ -37,8 +37,8 @@ impl Plot {
     }
 
     /* plot the FFT */
-    pub fn refresh(&mut self, caption: String, output: &[f32], hi_min: f32, lo_max: f32) {
-        self.draw(caption, output, hi_min, lo_max);
+    pub fn refresh(&mut self, caption: String, output: &[f32]) {
+        self.draw(caption, output);
         self.render();
 
         /* mark the time of last refresh */
@@ -46,7 +46,7 @@ impl Plot {
     }
 
     /* draw the plot in a buffer */
-    fn draw(&mut self, caption: String, output: &[f32], hi_min: f32, lo_max: f32) {
+    fn draw(&mut self, caption: String, output: &[f32]) {
         /* plotters needs a u8 buffer to write to, hence *
          * this cast from &mut[u32] to &mut[u8]          */
         let buf_u8: &mut [u8] = unsafe {
@@ -70,7 +70,7 @@ impl Plot {
             .margin(5)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_ranged(30f32..1600f32, 0f32..lo_max * 2.0)
+            .build_ranged(30f32..1600f32, 0f32..0.1)
             .unwrap();
         chart.configure_mesh().draw().unwrap();
 
@@ -79,20 +79,6 @@ impl Plot {
             .draw_series(LineSeries::new(
                 (30..1600).map(|n| (n as f32, output[n])),
                 &RED,
-            ))
-            .unwrap();
-
-        /* plot the clk variation range */
-        chart
-            .draw_series(LineSeries::new(
-                (30..1600).map(|n| (n as f32, lo_max)),
-                &GREEN,
-            ))
-            .unwrap();
-        chart
-            .draw_series(LineSeries::new(
-                (30..1600).map(|n| (n as f32, hi_min)),
-                &BLUE,
             ))
             .unwrap();
 
