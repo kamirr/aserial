@@ -1,2 +1,2 @@
 #!/usr/bin/bash
-DISPLAY=:1 cargo run --release -- cable listen
+DISPLAY=:1 cargo run --release -- listen

@@ -41,7 +41,7 @@ def flatten(lst):
 	return [item for sublst in lst for item in sublst]
 
 result = random_bytes(256) + decreasing_jump_len() + mid_jump_len()
-chks = list(chunks(result, 32))
+chks = list(chunks(result, 4))
 random.shuffle(chks)
 
 sys.stdout.buffer.write(bytes(flatten(chks)))

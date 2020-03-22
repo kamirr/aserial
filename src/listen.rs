@@ -41,7 +41,6 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     let start = std::time::Instant::now();
 
     /* all configuration */
-    let band = conf.band;
     let window_size = 8820usize;
 
     /* lock stdout, only this part of code uses it  *
@@ -57,6 +56,7 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     let mut output: Vec<f32> = vec![0.0; window_size];
 
     let mut finders = [ExtremumFinder::new(); 257];
+    let mut was_below_baseline = [false; 257];
 
     /* take each window from the microphone */
     for window in receiver.iter() {
@@ -73,9 +73,9 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
         normalize(&fft_output, &mut output, window_size);
 
         for k in 0 .. 257usize {
-            let freq_idx = (band.base + band.scale * k as u32) as usize / 10;
-            let from = band.base as usize / 10;
-            let to = (band.base + band.scale * 255) as usize / 10;
+            let freq_idx = (conf.base + conf.scale * k as u32) as usize / 10;
+            let from = conf.base as usize / 10;
+            let to = (conf.base + conf.scale * 255) as usize / 10;
             let val = output[freq_idx];
 
             let baseline = output[from..to]
@@ -84,12 +84,24 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
                 / (to - from) as f32;
 
             let vbr = val / baseline;
-            let above = vbr > conf.min_noise_ratio;
+            let above = vbr > conf.vbr_hi;
+            let below = vbr < conf.vbr_lo;
+            if below {
+                if !was_below_baseline[k] {
+                    eprintln!("{:02x} got below", k);
+                }
+                was_below_baseline[k] = true;
+            }
+
             if let Some(ex) = finders[k].push(val) {
                 if let Extremum::Maximum(_) = ex {
-                    if above && k != 0 {
+                    if above && k != 0 && was_below_baseline[k] {
+                        let recv = (k - 1) as u8;
+
                         min_vbr = min_vbr.min(vbr);
-                        out_handle.write_all(&[(k - 1) as u8]).unwrap();
+                        was_below_baseline[k] = false;
+                        eprintln!("recv({:02x}) vbr: {}", recv, vbr);
+                        out_handle.write_all(&[recv]).unwrap();
                         out_handle.flush().unwrap();
                         transferred += 1;
                     }

@@ -5,59 +5,54 @@ mod listen;
 mod plot;
 mod talk;
 
-use frame::Band;
+use serde::{Deserialize, Serialize};
 use listen::listen;
 use std::env::args;
 use std::process::exit;
 use talk::talk;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct Config {
     /* frequencies used for communication */
-    pub band: Band,
+    pub base: u32,
+    pub scale: u32,
 
     /* time for playing encoded data and silence */
     pub loud_time: f32,
     pub silent_time: f32,
 
-    /* ratio of the amplitude of data-encoding frequency  *
-     * to the baseline must be above this for the program *
-     * to not discard the data as noise                   */
-    pub min_noise_ratio: f32,
+    pub vbr_lo: f32,
+    pub vbr_hi: f32,
 }
 
 impl Config {
-    /* config for transmission over cable */
-    pub fn cable() -> Self {
+    pub fn new() -> Self {
         Config {
-            band: Band {
-                base: 4000,
-                scale: 40,
-            },
-            loud_time: 0.025,
-            silent_time: 0.025,
-            min_noise_ratio: 100.0,
+            base: 4000,
+            scale: 40,
+            loud_time: 0.021,
+            silent_time: 0.021,
+            vbr_hi: 100.0,
+            vbr_lo: 10.0,
         }
     }
 
-    /* config for loud transmission */
-    pub fn loud() -> Self {
-        Config {
-            band: Band {
-                base: 4000,
-                scale: 34,
-            },
-            loud_time: 0.075,
-            silent_time: 0.075,
-            min_noise_ratio: 100.0,
-        }
+    pub fn create() {
+        let cnf = Config::new();
+        let serialized = toml::to_string(&cnf).unwrap();
+        std::fs::write("conf.toml", serialized.as_bytes()).unwrap();
+    }
+
+    pub fn load() -> Self {
+        let serialized = std::fs::read_to_string("conf.toml").unwrap();
+        toml::from_str(&serialized).expect("malformed conf.toml")
     }
 }
 
 /* print usage and exit */
 /* the ! return type means that the function never returns */
 fn usage() -> ! {
-    eprintln!("usage: aserial loud|cable listen|talk");
+    eprintln!("usage: aserial makeconf|listen|talk");
     exit(1 /* 1, because stuff went wrong */)
 }
 
@@ -67,22 +62,16 @@ fn main() {
      * args[2] = loud / cable              */
     let args: Vec<String> = args().collect();
 
-    /* make sure that there are exactly 3 arguments */
-    if args.len() != 3 {
+    /* make sure that there are exactly 2 arguments */
+    if args.len() != 2 {
         usage();
     }
 
-    /* choose the config */
-    let conf = match args[1].as_ref() {
-        "loud" => Config::loud(),
-        "cable" => Config::cable(),
-        _ => usage(),
-    };
-
     /* start receiving / transmitting bytes */
-    match args[2].as_ref() {
-        "listen" => listen(conf),
-        "talk" => talk(conf),
+    match args[1].as_ref() {
+        "makeconf" => Config::create(),
+        "listen" => listen(Config::load()),
+        "talk" => talk(Config::load()),
         _ => usage(),
     }
 }

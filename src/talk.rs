@@ -8,7 +8,7 @@ use crate::Config;
 
 /* play sounds corresponding to incoming bytes */
 fn play(receiver: mpsc::Receiver<Vec<u8>>, conf: Config) {
-    let mut fb = FrameBuilder::new(conf.band);
+    let mut fb = FrameBuilder::new(conf);
     let mut transferred = 0;
     let start = std::time::Instant::now();
 
