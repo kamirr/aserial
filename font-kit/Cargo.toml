@@ -1,0 +1,64 @@
+[package]
+name = "font-kit"
+version = "0.4.0"
+authors = ["Patrick Walton <pcwalton@mimiga.net>"]
+description = "A cross-platform font loading library"
+license = "MIT/Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/servo/font-kit"
+homepage = "https://github.com/servo/font-kit"
+exclude = ["resources/**"]
+edition = "2018"
+
+[features]
+loader-freetype = ["freetype"]
+loader-freetype-default = ["loader-freetype"]
+source-fontconfig = ["servo-fontconfig"]
+source-fontconfig-default = ["source-fontconfig"]
+
+[dependencies]
+byteorder = "1.2"
+euclid = "0.20"
+float-ord = "0.2"
+lazy_static = "1.0"
+libc = "0.2"
+log = "0.4"
+lyon_path = "0.14"
+
+[dependencies.freetype]
+version = "^0.4.1"
+optional = true
+
+[dependencies.servo-fontconfig]
+version = "0.5"
+optional = true
+
+[dev-dependencies]
+clap = "2.32"
+colored = "1.6"
+pbr = "1.0"
+prettytable-rs = "0.8"
+
+[target.'cfg(target_family = "windows")'.dependencies]
+dwrote = { version = "0.9", default-features = false }
+
+[target.'cfg(target_family = "windows")'.dependencies.winapi]
+version = "0.3"
+features = ["dwrite", "minwindef", "sysinfoapi", "winbase", "winnt"]
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+core-foundation = "0.6"
+core-graphics = "^0.17.1"
+core-text = "13.2"
+
+[target.'cfg(not(any(target_family = "windows", target_os = "macos", target_os = "ios")))'.dependencies]
+freetype = "^0.4.1"
+
+[target.'cfg(not(any(target_family = "windows", target_os = "macos", target_os = "ios", target_arch = "wasm32")))'.dependencies]
+servo-fontconfig = "0.4"
+
+[target.'cfg(not(any(target_arch = "wasm32", target_family = "windows", target_os = "android")))'.dependencies]
+dirs = "2.0"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+walkdir = "2.1"
