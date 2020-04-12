@@ -13,3 +13,6 @@ minifb = "^0.13"
 kittyfb = "^0.1"
 serde = { version = "^1.0", features = ["derive"] }
 plotters = { version = "^0.2", features = ["bitmap"] }
+
+[patch.crates-io]
+font-kit = { path = "./font-kit/" }

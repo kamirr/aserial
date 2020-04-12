@@ -1,6 +1,6 @@
-base = 2000
-scale = 30
-loud_time = 0.03
-silent_time = 0.09
-vbr_hi = 120.0
-vbr_lo = 1.5
+base = 6100
+scale = 20
+loud_time = 0.0333333333
+silent_time = 0
+vbr_hi = 0.19
+vbr_lo = 0.19

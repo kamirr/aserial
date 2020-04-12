@@ -19,7 +19,7 @@ fn window_fn(f: f32, n: usize, n_total: usize) -> f32 {
 fn normalize(fft: &[Complex<f32>], out: &mut [f32], window_size: usize) {
     assert_eq!(fft.len(), out.len(), "yee? :)");
     for k in 0..out.len() {
-        out[k] = fft[k].norm_sqr() / window_size as f32;
+        out[k] = fft[k].norm_sqr() / k as f32 * out.len() as f32 / window_size as f32;
     }
 }
 
@@ -55,8 +55,8 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
     let mut fft_output: Vec<Complex<f32>> = vec![Complex::zero(); window_size];
     let mut output: Vec<f32> = vec![0.0; window_size];
 
-    let mut finders = [ExtremumFinder::new(); 257];
-    let mut was_below_baseline = [false; 257];
+    let mut finders = [ExtremumFinder::new(); 256*2];
+    let mut was_below_baseline = [false; 256*2];
 
     /* take each window from the microphone */
     for window in receiver.iter() {
@@ -72,7 +72,7 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
         /* 'normalize' FFT output */
         normalize(&fft_output, &mut output, window_size);
 
-        for k in 0 .. 257usize {
+        for k in 0 .. 256usize*2 {
             let freq_idx = (conf.base + conf.scale * k as u32) as usize / 10;
             let from = conf.base as usize / 10;
             let to = (conf.base + conf.scale * 255) as usize / 10;
@@ -83,7 +83,7 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
                 .fold(0.0, |a, b| a + b)
                 / (to - from) as f32;
 
-            let vbr = val / baseline;
+            let vbr = val;
             let above = vbr > conf.vbr_hi;
             let below = vbr < conf.vbr_lo;
             if below {
@@ -95,8 +95,8 @@ fn audio_processing(receiver: mpsc::Receiver<Vec<f32>>, conf: Config) {
 
             if let Some(ex) = finders[k].push(val) {
                 if let Extremum::Maximum(_) = ex {
-                    if above && k != 0 && was_below_baseline[k] {
-                        let recv = (k - 1) as u8;
+                    if above && was_below_baseline[k] {
+                        let recv = (k % 256) as u8;
 
                         min_vbr = min_vbr.min(vbr);
                         was_below_baseline[k] = false;

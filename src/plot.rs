@@ -70,7 +70,7 @@ impl Plot {
             .margin(5)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_ranged(30f32..1600f32, 0f32..0.1)
+            .build_ranged(30f32..1600f32, 0f32..1f32)
             .unwrap();
         chart.configure_mesh().draw().unwrap();
 

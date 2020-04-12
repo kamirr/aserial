@@ -20,9 +20,15 @@ fn play(receiver: mpsc::Receiver<Vec<u8>>, conf: Config) {
     for bytes in receiver.iter() {
         /* for each byte play it twice: once w/o the clock, and once with it */
         for b in bytes {
-            fb.build(Some(b as u32 + 1), &sink, conf.loud_time);
-            fb.build(None, &sink, conf.silent_time);
+            let shift = match transferred % 2 {
+                0 => 0,
+                1 => 256,
+                _ => panic!(),
+            };
             transferred += 1;
+
+            fb.build(Some(b as u32 + shift), &sink, conf.loud_time);
+            fb.build(None, &sink, conf.silent_time);
         }
     }
 
